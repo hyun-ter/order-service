@@ -1,6 +1,6 @@
 # Order Service Design Spec
 
-**Date:** 2026-05-21
+**Date:** 2026-05-21 (Updated: 2026-05-22)
 **Purpose:** 포트폴리오 용도 — 쿠팡 주문 서비스 벤치마킹
 **Stack:** Spring Boot 4.0, JPA, DDD, MySQL (Docker)
 
@@ -8,7 +8,9 @@
 
 ## 1. 범위
 
-- 주문 생성 → 결제 → 배송 상태 관리 (핵심 플로우)
+- 회원 가입/조회
+- 판매자 등록/조회, 판매자가 상품 등록
+- 주문 생성 → 결제 → 배송 상태 관리 (회원이 주문 생성)
 - 상품 조회
 - 재고 연동 (주문 생성 시 재고 차감)
 
@@ -18,7 +20,7 @@
 
 **Layered Architecture + DDD** (모놀리식 단일 앱)
 
-도메인(`order`, `product`, `inventory`)별로 패키지를 나누고, 각 도메인 내부에서 레이어를 분리한다.
+도메인(`member`, `seller`, `order`, `product`, `inventory`)별로 패키지를 나누고, 각 도메인 내부에서 레이어를 분리한다.
 
 **핵심 규칙:**
 - 도메인 레이어는 Spring/JPA 등 외부 의존성 없음 (순수 Java)
@@ -31,6 +33,24 @@
 
 ```
 com.example.orderservice
+├── member/
+│   ├── presentation/        # REST Controller, Request/Response DTO
+│   ├── application/         # MemberApplicationService
+│   ├── domain/
+│   │   ├── model/           # Member, MemberId, Email, Address
+│   │   └── repository/      # MemberRepository (interface)
+│   └── infrastructure/
+│       └── persistence/     # MemberJpaRepository, MemberJpaEntity
+│
+├── seller/
+│   ├── presentation/        # REST Controller, Request/Response DTO
+│   ├── application/         # SellerApplicationService
+│   ├── domain/
+│   │   ├── model/           # Seller, SellerId, BusinessName, Contact
+│   │   └── repository/      # SellerRepository (interface)
+│   └── infrastructure/
+│       └── persistence/     # SellerJpaRepository, SellerJpaEntity
+│
 ├── order/
 │   ├── presentation/        # REST Controller, Request/Response DTO
 │   ├── application/         # OrderApplicationService, OrderEventHandler
@@ -65,12 +85,37 @@ com.example.orderservice
 
 ## 4. 도메인 모델
 
+### Member (Aggregate Root)
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| memberId | MemberId (VO) | 회원 식별자 |
+| email | Email (VO) | 이메일 (고유, 형식 검증) |
+| name | String | 이름 |
+| address | Address (VO) | 기본 배송지 (도로명, 상세주소, 우편번호) |
+| createdAt | LocalDateTime | 가입 시각 |
+
+- `Member.register()` 팩토리 메서드로 생성
+- 이메일 중복 검증은 `MemberApplicationService`에서 처리
+
+### Seller (Aggregate Root)
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| sellerId | SellerId (VO) | 판매자 식별자 |
+| businessName | BusinessName (VO) | 상호명 |
+| contact | Contact (VO) | 연락처 (전화번호, 이메일) |
+| status | SellerStatus | ACTIVE / SUSPENDED |
+| createdAt | LocalDateTime | 등록 시각 |
+
+- 상품 등록 시 `sellerId`를 Product에 ID 참조로 저장
+
 ### Order (Aggregate Root)
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | orderId | OrderId (VO) | 주문 식별자 |
-| customerId | CustomerId (VO) | 고객 식별자 |
+| memberId | MemberId (VO) | 회원 ID 참조 |
 | orderItems | List\<OrderItem\> | 주문 항목 |
 | totalAmount | Money (VO) | 총 금액 |
 | status | OrderStatus | PENDING → PAID → SHIPPING → DELIVERED / CANCELLED |
@@ -85,6 +130,7 @@ com.example.orderservice
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | productId | ProductId (VO) | 상품 식별자 |
+| sellerId | SellerId (VO) | 판매자 ID 참조 |
 | name | String | 상품명 |
 | price | Money (VO) | 가격 (음수 불가) |
 | category | Category (VO) | 카테고리 |
@@ -108,7 +154,8 @@ com.example.orderservice
 ```
 주문 생성 요청 (POST /api/orders)
   → OrderApplicationService
-    → ProductRepository로 상품 존재 확인
+    → MemberRepository로 회원 존재 확인
+    → ProductRepository로 상품 존재 및 ON_SALE 상태 확인
     → Order.create() → OrderCreatedEvent 발행 (ApplicationEventPublisher)
   → InventoryEventHandler (OrderCreatedEvent 구독, @TransactionalEventListener)
     → Inventory.decrease() 호출
@@ -122,22 +169,37 @@ com.example.orderservice
 
 ## 6. API 설계
 
+### Member API
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | /api/members | 회원 가입 |
+| GET | /api/members/{memberId} | 회원 단건 조회 |
+
+### Seller API
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | /api/sellers | 판매자 등록 |
+| GET | /api/sellers/{sellerId} | 판매자 단건 조회 |
+
 ### Order API
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | /api/orders | 주문 생성 |
+| POST | /api/orders | 주문 생성 (회원만 가능) |
 | GET | /api/orders/{orderId} | 주문 단건 조회 |
-| GET | /api/orders?customerId={id} | 고객별 주문 목록 |
+| GET | /api/orders?memberId={id} | 회원별 주문 목록 |
 | PATCH | /api/orders/{orderId}/cancel | 주문 취소 |
 
 ### Product API
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | /api/products | 상품 등록 |
+| POST | /api/products | 상품 등록 (판매자만 가능) |
 | GET | /api/products/{productId} | 상품 단건 조회 |
 | GET | /api/products?category={cat} | 카테고리별 상품 목록 |
+| GET | /api/products?sellerId={id} | 판매자별 상품 목록 |
 
 ### Inventory API
 
@@ -198,5 +260,5 @@ services:
 ## 9. 에러 처리
 
 - `GlobalExceptionHandler` (`@RestControllerAdvice`)로 일관된 에러 응답 포맷 제공
-- 주요 예외: `OrderNotFoundException`, `ProductNotFoundException`, `OutOfStockException`, `InvalidOrderStatusException`
-- HTTP 상태코드: 404 (Not Found), 400 (Bad Request), 409 (Conflict — 재고 부족)
+- 주요 예외: `MemberNotFoundException`, `SellerNotFoundException`, `OrderNotFoundException`, `ProductNotFoundException`, `OutOfStockException`, `InvalidOrderStatusException`, `DuplicateEmailException`
+- HTTP 상태코드: 404 (Not Found), 400 (Bad Request), 409 (Conflict — 재고 부족 / 이메일 중복)

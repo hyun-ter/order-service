@@ -9,6 +9,8 @@ public final class Address {
     private final String zipCode;
 
     public Address(String street, String detail, String zipCode) {
+        if (street == null || street.isBlank()) throw new IllegalArgumentException("Street cannot be blank");
+        if (zipCode == null || zipCode.isBlank()) throw new IllegalArgumentException("ZipCode cannot be blank");
         this.street = street;
         this.detail = detail;
         this.zipCode = zipCode;

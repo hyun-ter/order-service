@@ -12,12 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@Transactional
 @RequiredArgsConstructor
 public class MemberApplicationService {
 
     private final MemberRepository memberRepository;
 
+    @Transactional
     public MemberResponse register(RegisterMemberCommand command) {
         Email email = new Email(command.getEmail());
 

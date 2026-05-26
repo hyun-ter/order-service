@@ -4,10 +4,13 @@ import java.util.Objects;
 
 public final class Email {
 
+    private static final java.util.regex.Pattern EMAIL_PATTERN =
+        java.util.regex.Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+
     private final String value;
 
     public Email(String value) {
-        if (value == null || !value.contains("@")) {
+        if (value == null || !EMAIL_PATTERN.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid email format: " + value);
         }
         this.value = value;

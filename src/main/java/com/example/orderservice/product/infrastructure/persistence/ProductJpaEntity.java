@@ -35,8 +35,9 @@ public class ProductJpaEntity {
     @Column(nullable = false)
     private String category;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private String status;
+    private ProductStatus status;
 
     public Product toProduct() {
         return Product.restore(
@@ -45,7 +46,7 @@ public class ProductJpaEntity {
                 name,
                 Money.of(price),
                 new Category(category),
-                ProductStatus.valueOf(status)
+                status
         );
     }
 
@@ -56,7 +57,7 @@ public class ProductJpaEntity {
                 .name(product.getName())
                 .price(product.getPrice().getAmount())
                 .category(product.getCategory().getName())
-                .status(product.getStatus().name())
+                .status(product.getStatus())
                 .build();
     }
 }

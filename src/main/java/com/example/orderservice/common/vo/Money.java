@@ -44,12 +44,13 @@ public final class Money {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         Money money = (Money) o;
-        return Objects.equals(amount, money.amount);
+        return amount.compareTo(money.amount) == 0;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(amount);
+        // scale 정규화 후 hashCode
+        return amount.stripTrailingZeros().hashCode();
     }
 
     @Override

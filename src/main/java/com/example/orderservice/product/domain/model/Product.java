@@ -22,6 +22,7 @@ public class Product {
     }
 
     public static Product register(SellerId sellerId, String name, Money price, Category category) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("Product name cannot be blank");
         return new Product(null, sellerId, name, price, category, ProductStatus.ON_SALE);
     }
 

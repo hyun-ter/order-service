@@ -24,6 +24,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * 주문 Application Service.
+ *
+ * <p>주문 생성 플로우를 오케스트레이션한다:
+ * 회원/상품 조회 → 주문 가능 검증 → Order 생성 → 저장 → 이벤트 발행
+ *
+ * <p>이벤트 발행 후 {@code InventoryEventHandler}가 {@code OrderCreatedEvent}를 수신하여
+ * 같은 트랜잭션 내에서(BEFORE_COMMIT) 재고를 차감한다.
+ * 재고 부족 시 {@code OutOfStockException}이 발생하고 트랜잭션 전체가 롤백된다.
+ */
 @Service
 @RequiredArgsConstructor
 public class OrderApplicationService {
@@ -34,6 +44,17 @@ public class OrderApplicationService {
     private final OrderDomainService orderDomainService;
     private final ApplicationEventPublisher eventPublisher;
 
+    /**
+     * 주문을 생성한다.
+     *
+     * <ol>
+     *   <li>회원 존재 확인</li>
+     *   <li>상품 목록 조회 및 ON_SALE 상태 검증</li>
+     *   <li>OrderItem 생성 (주문 시점 상품명·단가 스냅샷)</li>
+     *   <li>Order 도메인 객체 생성 및 저장</li>
+     *   <li>OrderCreatedEvent 발행 → InventoryEventHandler가 재고 차감</li>
+     * </ol>
+     */
     @Transactional
     public OrderResponse createOrder(CreateOrderCommand command) {
         // 1. 회원 존재 확인
@@ -50,10 +71,10 @@ public class OrderApplicationService {
             products.add(product);
         }
 
-        // 3. 주문 가능 여부 검증
+        // 3. 주문 가능 여부 검증 (ON_SALE 상태인지 확인)
         orderDomainService.validateOrderable(products);
 
-        // 4. OrderItem 목록 생성
+        // 4. OrderItem 목록 생성 — 상품명·단가를 현재 시점으로 스냅샷
         List<OrderItem> orderItems = new ArrayList<>();
         for (int i = 0; i < command.getItems().size(); i++) {
             CreateOrderCommand.OrderItemCommand itemCmd = command.getItems().get(i);
@@ -67,13 +88,14 @@ public class OrderApplicationService {
             orderItems.add(orderItem);
         }
 
-        // 5. 주문 생성
+        // 5. 주문 생성 (status=PENDING, totalAmount 자동 계산)
         Order order = Order.create(memberId, orderItems);
 
         // 6. 저장
         Order saved = orderRepository.save(order);
 
-        // 7. 이벤트 발행
+        // 7. 이벤트 발행 — InventoryEventHandler가 BEFORE_COMMIT 단계에서 재고 차감
+        //    재고 부족 시 OutOfStockException 발생 → 트랜잭션 롤백으로 주문도 취소됨
         List<OrderCreatedEvent.OrderItemInfo> itemInfos = saved.getOrderItems().stream()
                 .map(item -> new OrderCreatedEvent.OrderItemInfo(
                         item.getProductId().getId(),
@@ -83,7 +105,6 @@ public class OrderApplicationService {
                 .collect(Collectors.toList());
         eventPublisher.publishEvent(new OrderCreatedEvent(saved.getOrderId().getId(), itemInfos));
 
-        // 8. 응답 반환
         return toResponse(saved);
     }
 

@@ -2,6 +2,12 @@ package com.example.orderservice.member.domain.model;
 
 import java.util.Objects;
 
+/**
+ * 이메일 주소를 나타내는 Value Object.
+ *
+ * <p>생성 시점에 이메일 형식을 검증하므로, Email 인스턴스가 존재하면 항상 유효한 이메일이다.
+ * Presentation 레이어의 {@code @Email} 검증과 별개로, 도메인 규칙을 자체적으로 보장한다.
+ */
 public final class Email {
 
     private static final java.util.regex.Pattern EMAIL_PATTERN =
